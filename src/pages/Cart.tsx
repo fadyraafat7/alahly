@@ -1,0 +1,5 @@
+import { Link } from 'react-router-dom'
+import { CartItem } from '../components/cart/CartItem'
+import { CartSummary } from '../components/cart/CartSummary'
+import { useCart } from '../store/CartContext'
+export function Cart() { const { items } = useCart(); if (!items.length) return <main className="mx-auto max-w-4xl px-6 py-20 text-center"><p className="text-xs font-bold uppercase tracking-widest text-clay">Your bag</p><h1 className="mt-3 font-display text-5xl font-bold">It’s feeling a little empty.</h1><p className="mt-4 text-ink/60">Add a few pieces you’ll love living with.</p><Link to="/products" className="mt-8 inline-block rounded-full bg-moss px-6 py-3 text-sm font-bold text-white">Explore the shop</Link></main>; return <main className="mx-auto max-w-6xl px-6 py-10 sm:py-14"><h1 className="font-display text-5xl font-bold">Your bag</h1><div className="mt-9 grid gap-8 lg:grid-cols-[1fr_360px]"><section className="divide-y divide-ink/10 rounded-2xl bg-white px-5 shadow-sm">{items.map((item) => <CartItem key={item.key} item={item} />)}</section><aside><CartSummary /></aside></div></main> }

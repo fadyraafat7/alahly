@@ -1,0 +1,6 @@
+import { X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { useCart } from '../../store/CartContext'
+import { CartItem } from './CartItem'
+import { CartSummary } from './CartSummary'
+export function CartDrawer() { const { isOpen, setOpen, items } = useCart(); if (!isOpen) return null; return <div className="fixed inset-0 z-50"><button aria-label="Close cart" onClick={() => setOpen(false)} className="absolute inset-0 bg-ink/40" /><aside aria-label="Shopping cart" className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-cream shadow-2xl"><div className="flex items-center justify-between border-b border-ink/10 p-5"><h2 className="font-display text-2xl font-bold">Your bag</h2><button onClick={() => setOpen(false)} aria-label="Close cart" className="rounded-full p-2 hover:bg-sand"><X /></button></div><div className="flex-1 overflow-y-auto px-5">{items.length ? items.map((item) => <CartItem key={item.key} item={item} />) : <div className="py-16 text-center"><p className="font-display text-xl">Your bag is empty.</p><Link onClick={() => setOpen(false)} to="/products" className="mt-4 inline-block text-sm font-bold text-moss underline">Start shopping</Link></div>}</div>{items.length > 0 && <div className="border-t border-ink/10 p-5"><CartSummary /></div>}</aside></div> }

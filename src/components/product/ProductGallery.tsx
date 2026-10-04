@@ -1,0 +1,4 @@
+import { useState } from 'react'
+import type { ProductImage } from '../../types/product'
+const fallback = 'https://placehold.co/800x800/ebe9df/315b3d?text=Alahly'
+export function ProductGallery({ images, name }: { images: ProductImage[]; name: string }) { const [selected, setSelected] = useState(0); const image = images[selected]; return <div><div className="aspect-square overflow-hidden rounded-3xl bg-sand"><img src={image?.src || fallback} alt={image?.alt || name} className="h-full w-full object-cover" /></div>{images.length > 1 && <div className="mt-3 flex gap-3 overflow-x-auto pb-1">{images.map((item, index) => <button key={item.id} onClick={() => setSelected(index)} aria-label={`View image ${index + 1}`} className={`h-18 w-18 shrink-0 overflow-hidden rounded-xl border-2 ${selected === index ? 'border-moss' : 'border-transparent'}`}><img src={item.src} alt="" className="h-full w-full object-cover" /></button>)}</div>}</div> }
