@@ -7,8 +7,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   server: {
     proxy: {
-      '/api': {
-        target: 'http://localhost:5000',
+      '/wp-json': {
+        target: 'https://darkslateblue-dotterel-481044.hostingersite.com',
         changeOrigin: true,
       },
     },
