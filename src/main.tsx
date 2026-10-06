@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 import { CartProvider } from './store/CartContext.tsx'
+import { AuthProvider } from './store/AuthContext.tsx'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, retry: 1, refetchOnWindowFocus: false } },
@@ -13,7 +14,7 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <CartProvider><BrowserRouter><App /></BrowserRouter></CartProvider>
+      <AuthProvider><CartProvider><BrowserRouter><App /></BrowserRouter></CartProvider></AuthProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

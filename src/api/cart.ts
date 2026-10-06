@@ -121,3 +121,5 @@ export async function removeStoreCartItem(key: string): Promise<CartItem[]> {
   });
   return sync(data, headers);
 }
+
+export const getStoreCartToken = () => readToken()
