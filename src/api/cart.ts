@@ -3,7 +3,7 @@ import { apiRequest } from "./client";
 import type { CartItem } from "../types/cart";
 import type { ProductImage } from "../types/product";
 
-const tokenKey = "alahly-store-cart-token";
+const nonceKey = "alahly-store-api-nonce";
 const itemSchema = z.object({
   key: z.string(),
   id: z.number(),
@@ -32,10 +32,10 @@ const itemSchema = z.object({
     .default([]),
 });
 const cartSchema = z.object({ items: z.array(itemSchema).default([]) });
-const readToken = () => sessionStorage.getItem(tokenKey) ?? undefined;
-const rememberToken = (headers: Headers) => {
-  const token = headers.get("Cart-Token");
-  if (token) sessionStorage.setItem(tokenKey, token);
+const readNonce = () => sessionStorage.getItem(nonceKey) ?? undefined;
+const rememberNonce = (headers: Headers) => {
+  const nonce = headers.get("Nonce");
+  if (nonce) sessionStorage.setItem(nonceKey, nonce);
 };
 const minorToDecimal = (price: string, digits: number) =>
   String(Number(price) / 10 ** digits);
@@ -77,17 +77,14 @@ const toCartItem = (item: z.infer<typeof itemSchema>): CartItem => ({
     has_options: false,
   },
 });
-const cartHeaders = () =>
-  readToken() ? { "Cart-Token": readToken()! } : undefined;
+const cartHeaders = () => (readNonce() ? { Nonce: readNonce()! } : undefined);
 const sync = (data: unknown, headers: Headers) => {
-  rememberToken(headers);
+  rememberNonce(headers);
   return cartSchema.parse(data).items.map(toCartItem);
 };
 
 export async function getStoreCart(): Promise<CartItem[]> {
-  const { data, headers } = await apiRequest<unknown>("/cart", {
-    headers: cartHeaders(),
-  });
+  const { data, headers } = await apiRequest<unknown>("/cart");
   return sync(data, headers);
 }
 export async function addStoreCartItem(
@@ -121,5 +118,3 @@ export async function removeStoreCartItem(key: string): Promise<CartItem[]> {
   });
   return sync(data, headers);
 }
-
-export const getStoreCartToken = () => readToken()

@@ -1,6 +1,12 @@
 # Alahly WooCommerce storefront
 
-The React storefront uses the WooCommerce Store API for products and cart activity. Customer authentication and customer-order access are supplied by the included WordPress plugin.
+The React storefront uses WooCommerce Store API for product and cookie-backed cart activity. Checkout remains hosted by WooCommerce.
+
+## Same-origin cart and checkout
+
+The React app and WordPress must use the same site host in production: `http://alahly.test` for this local setup (and the same HTTPS production hostname after deployment). This allows WooCommerce’s customer-session cookie to be used by both the React Store API cart and `/checkout/`.
+
+The cart client sends Store API nonces for write requests and does not store or send Cart Tokens. The browser sends WooCommerce’s HTTP-only session cookie automatically with same-origin requests.
 
 ## Local development
 
@@ -9,29 +15,23 @@ npm install
 npm run dev
 ```
 
-The Vite development server runs on `http://localhost:5173` and forwards `/wp-json` to `http://alahly.test`.
+Open the app at **`http://alahly.test:5173`**, not `http://localhost:5173`. Vite forwards `/wp-json` to WordPress and, because the browser host is `alahly.test`, the WooCommerce session cookie can be shared with the checkout page at `http://alahly.test/checkout/`.
 
-## Install the WordPress bridge
+After switching from the old token-based cart, clear this obsolete session-storage key once in browser DevTools if it exists:
 
-1. Copy [wordpress-plugin/alahly-spa-bridge](wordpress-plugin/alahly-spa-bridge) into `wp-content/plugins/` on `alahly.test`.
-2. Activate **Alahly SPA Bridge** in WordPress Admin → Plugins.
-3. In WooCommerce → Settings → Advanced, create and assign a **Checkout** page that resolves at `http://alahly.test/checkout/`.
-4. Keep the frontend origin as `http://localhost:5173`, or update `FRONTEND_ORIGIN` in the plugin before using a different origin.
-
-The plugin uses an exact allowed origin; it does not enable wildcard credentialed CORS.
+```js
+sessionStorage.removeItem('alahly-store-cart-token')
+```
 
 ## Checkout behavior
 
-The cart's **Proceed to checkout** control is a normal browser link to the WooCommerce-hosted checkout page: `http://alahly.test/checkout/`. It does not call the React `/checkout` route, post to `wp-admin/admin-post.php`, or submit a cart token.
+**Proceed to checkout** performs a normal browser navigation to `http://alahly.test/checkout/`. No custom checkout, Cart Token handoff, `admin-post.php` checkout post, or frontend WooCommerce credentials are used.
 
-The Store API cart uses a Cart Token stored in browser session storage, while classic WooCommerce checkout normally reads its own WooCommerce session cookie. If the checkout page shows an empty cart, this is a Store API/classic WooCommerce session boundary that must be resolved in WooCommerce itself; this application deliberately does not bridge the cart token or use an insecure workaround.
+Configure a WooCommerce checkout page at that URL in WooCommerce → Settings → Advanced.
 
 ## Authentication
 
-- Login validates the password only in WordPress. The plugin returns a short-lived, server-signed token stored in browser session storage, then performs a top-level handoff to create the normal WordPress login cookie for WooCommerce.
-- `/orders` uses that server-validated identity. The browser never supplies a customer ID, so it cannot request another customer's orders.
-
-For production, use HTTPS. The WordPress plugin must use the deployed frontend’s exact origin, and the checkout page must be configured in WooCommerce.
+Customer login and order lookup require the separately installed and activated **Alahly SPA Bridge** WordPress plugin. Its REST endpoint derives the order customer ID from the server-verified user token; the browser never supplies a customer ID.
 
 ## Validation
 
