@@ -25,6 +25,10 @@ const attributeSchema = z.object({
     .array(z.object({ name: z.string(), slug: z.string().default("") }))
     .default([]),
 });
+const variationReferenceSchema = z.union([
+  z.number(),
+  z.object({ id: z.number() }).passthrough(),
+]);
 const storeProductSchema = z
   .object({
     id: z.number(),
@@ -50,7 +54,7 @@ const storeProductSchema = z
     categories: z.array(taxonomySchema).default([]),
     tags: z.array(taxonomySchema).default([]),
     attributes: z.array(attributeSchema).default([]),
-    variations: z.array(z.number()).default([]),
+    variations: z.array(variationReferenceSchema).default([]),
     has_options: z.boolean().default(false),
   })
   .passthrough();
@@ -96,7 +100,9 @@ const toProduct = (item: StoreProduct): Product => ({
     variation: item.has_options,
     visible: true,
   })),
-  variations: item.variations,
+  variations: item.variations.map((variation) =>
+    typeof variation === "number" ? variation : variation.id,
+  ),
   has_options: item.has_options,
 });
 const pageMeta = (headers: Headers, count: number) => ({
