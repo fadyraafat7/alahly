@@ -1,4 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import { getProduct, getVariations } from '../api/products'
-export const useProduct = (slug: string) => useQuery({ queryKey: ['product', slug], queryFn: () => getProduct(slug), enabled: Boolean(slug) })
-export const useVariations = (id?: number, enabled = false) => useQuery({ queryKey: ['variations', id], queryFn: () => getVariations(id!), enabled: Boolean(id) && enabled })
+import { useQuery } from "@tanstack/react-query";
+import { productQuery, variationsQuery } from "../query/catalog";
+export const useProduct = (slug: string) =>
+  useQuery({ ...productQuery(slug), enabled: Boolean(slug) });
+export const useVariations = (id?: number, enabled = false) =>
+  useQuery({ ...variationsQuery(id!), enabled: Boolean(id) && enabled });

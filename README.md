@@ -1,71 +1,119 @@
 # Alahly WooCommerce storefront
 
-The React storefront uses WooCommerce Store API for product and cookie-backed cart activity. Checkout remains hosted by WooCommerce.
+React Router **7.18.4 Framework Mode** provides SSR with Vite, React, TypeScript, Tailwind, and TanStack Query. The existing storefront components remain in `src/`; framework entry points and route modules live in `app/`.
 
-## Same-origin cart and checkout
+## Development
 
-The React app and WordPress must use the same site host in production: `http://alahly.test` for this local setup (and the same HTTPS production hostname after deployment). This allows WooCommerce’s customer-session cookie to be used by both the React Store API cart and `/checkout/`.
-
-The cart client sends Store API nonces for write requests and does not store or send Cart Tokens. The browser sends WooCommerce’s HTTP-only session cookie automatically with same-origin requests.
-
-## Local development
+Use Node 22.17+ and npm:
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Open the app at **`http://alahly.test:5173`**, not `http://localhost:5173`. Vite forwards `/wp-json` to WordPress and, because the browser host is `alahly.test`, the WooCommerce session cookie can be shared with the checkout page at `http://alahly.test/checkout/`.
+Open **http://alahly.test:5173**. WordPress must be running at the configured `VITE_WP_SITE_URL`. The existing WordPress bridge accepts the exact origin `http://alahly.test:5173`; localhost is not interchangeable. Ports differ, but cookies share the `alahly.test` host. Vite forwards browser `/wp-json` requests to WordPress.
 
-After switching from the old token-based cart, clear this obsolete session-storage key once in browser DevTools if it exists:
+## Rendering and data ownership
 
-```js
-sessionStorage.removeItem('alahly-store-cart-token')
-```
+- Home, product listings, categories, and product details load public Store API data on the server.
+- Route loaders create a fresh QueryClient per request, fetch using shared query definitions, and return a dehydrated public cache through React Router loader data. Existing hooks consume that cache through HydrationBoundary; fresh initial data does not need a second browser fetch.
+- Search, filters, pagination, and sorting use URL parameters. Category pagination and sorting now survive refresh.
+- Titles, descriptions, canonical links, and robots metadata come from route modules. Missing products/categories return HTTP 404; upstream failures return a 503 error page.
+- HTML descriptions use the same sanitization policy in Node and the browser.
+- Auth/session state, customer orders, registration actions, and cookie-backed cart operations remain client-side. The server renders loading states instead of pretending to know the current customer or cart.
+- No customer cookies, cart nonces, or bearer tokens are forwarded by public loaders or included in their hydration data. Server QueryClients are never shared between requests.
 
-## Checkout behavior
-
-**Proceed to checkout** performs a normal browser navigation to `http://alahly.test/checkout/`. No custom checkout, Cart Token handoff, `admin-post.php` checkout post, or frontend WooCommerce credentials are used.
-
-Configure a WooCommerce checkout page at that URL in WooCommerce → Settings → Advanced.
-
-## Authentication
-
-Customer login and order lookup require the separately installed and activated **Alahly SPA Bridge** WordPress plugin. Its REST endpoint derives the order customer ID from the server-verified user token; the browser never supplies a customer ID.
-
-React's login endpoint returns a bearer token; it does not create a WordPress browser session. The existing top-level authentication handoff to WordPress sets WordPress's own HttpOnly login cookies. React now sends a validated absolute `return_to` URL so the bridge can return to the intended account route rather than its home-page fallback.
-
-The installed bridge is now configured with `FRONTEND_ORIGIN = 'http://alahly.test:5173'`. Open Vite at that address for a shared cart and a permitted authentication handoff. The bridge requires POST from that exact Origin, validates the return URL's scheme/host/port, runs the normal WordPress login hook, and returns a 303 redirect. Requests from localhost are rejected by this origin policy. The project copy of that plugin was removed; its live source remains in the WordPress installation.
-
-Login can still establish a WordPress session when React runs on localhost: the browser submits the handoff directly to the WordPress origin. However, the cookie-backed React cart on localhost cannot share the WordPress cart cookie. Keep cart and hosted checkout on the same host for cart preservation. Ports 5173 and 80 are different origins, but cookies are scoped by host and path rather than by port; the existing Vite API forwarding supplies same-origin browser requests during development.
-
-See [customer login verification](docs/customer-login.md) for the observed requests, WordPress configuration and browser acceptance checks.
-
-## Sign up
-
-Customers can open `/signup` or choose **Create an account** on the sign-in page. Sign-in and sign-up links preserve the requested return destination. Successful registration uses the existing WordPress authentication handoff to establish the native login cookie.
-
-The separately installed **Alahly SPA Bridge 1.1.1** now provides `GET /wp-json/alahly-spa/v1/auth/registration` and `POST /wp-json/alahly-spa/v1/auth/register`. This WordPress-side change was applied to `C:/laragon/www/alahly/wp-content/plugins/alahly-spa-bridge/alahly-spa-bridge.php`; deploying the React build alone to another installation will not add those endpoints.
-
-Duplicate emails and usernames return an explicit conflict message (HTTP 409). Existing customers can sign in or follow the password-reset link to WordPress's native recovery form. Opening the form does not send an email until the customer submits it.
-
-The form follows **WooCommerce → Settings → Accounts & Privacy**. On this installation, automatic password generation is disabled (`woocommerce_registration_generate_password=no`), so signup requires a 12–128 character password and confirmation. Registration must be enabled on My Account; usernames remain automatically generated. The **Forgot your password?** link opens WordPress's native email-reset flow. Configure working WordPress email delivery for recovery links. Keep automatic password generation disabled on other installations to retain password fields at signup.
-
-Registration uses `wc_create_new_customer`, retains WooCommerce validation and automatic-login hooks, and accepts only explicit customer fields. It rejects other browser origins and non-JSON requests and applies a basic limit of five validated attempts per five minutes per server-observed IP. The local Vite proxy shares its IP across clients. Passwords are never saved to browser storage. The existing server-side customer ownership checks still control order access.
-
-Verification covered generated and chosen passwords, duplicate/invalid inputs, disabled registration, origin checks, customer roles, registration hooks, rate limiting, and the live HTTP authentication handoff. Temporary test accounts were removed. Browser rendering and delivery of password-setup emails have not been verified.
-
-## Customer orders
-
-Open **Account → View my orders** or `/my-account/orders` after signing in. The page shows each order's number, date, status, and currency-aware total, with refresh, loading, empty, error, and expired-session states.
-
-Orders come from the existing authenticated `GET /wp-json/alahly-spa/v1/orders` endpoint. WordPress determines ownership from the verified token. React validates the response and scopes its query cache by the signed-in user; customer IDs are never sent as order filters. The installed endpoint returns the latest 50 orders, not a full paginated history.
-
-To check the flow, open the page while signed out, sign in, and confirm that it returns to orders. Repeat with a different customer and verify that the list changes. No checkout or WordPress plugin changes are required for this page.
-
-## Validation
+## Commands
 
 ```powershell
+npm run dev
+npm run typecheck
 npm run build
 npm run lint
+npm test
+npm start
 ```
+
+The scripts run `react-router dev`, `react-router typegen && tsc -b`, `react-router build`, and `react-router-serve build/server/index.js`. `npm run preview` also runs the production server. Build output is `build/client` plus `build/server`, not the old static `dist`.
+
+For an isolated production smoke test:
+
+```powershell
+$env:HOST = '127.0.0.1'
+$env:PORT = '4173'
+npm start
+```
+
+Then, in another terminal:
+
+```powershell
+$env:SSR_TEST_URL = 'http://127.0.0.1:4173'
+npm run test:ssr
+```
+
+Smoke tests use real WooCommerce products and check rendered HTML after removing script blocks. They require populated product/category data and at least two product pages. `npm test` checks URL parsing and HTML sanitization without contacting WordPress.
+
+On memory-constrained Windows systems, set `$env:RAYON_NUM_THREADS = '2'` before building. Do not run two development servers against the same Vite dependency cache. React Router v7 currently prints Vite envFile deprecation and v8 future-flag notices; these are upstream tooling notices, not failed builds.
+
+## Environment
+
+See `.env.example`. Every `VITE_*` value is public and embedded during the client build:
+
+| Variable | Purpose |
+| --- | --- |
+| `VITE_WC_STORE_API_URL` | Browser Store API path, normally `/wp-json/wc/store/v1`. |
+| `VITE_WP_AUTH_API_URL` | Browser bridge API path, normally `/wp-json/alahly-spa/v1`. |
+| `VITE_WP_SITE_URL` | WordPress origin for native authentication, recovery, and checkout. |
+| `WC_STORE_API_URL` | Optional server-only absolute Store API override. Defaults to the configured browser API path resolved against the WordPress origin. |
+| `STOREFRONT_URL` | Server-side canonical storefront origin; defaults to the WordPress origin. |
+| `HOST`, `PORT` | Production Node listener address and port. |
+
+Vite reads `.env` in development/build. Set server-only values in the production process environment; `react-router-serve` does not automatically load this project's `.env`. No WooCommerce Consumer Key or Secret is needed for public catalog SSR.
+
+## Production deployment
+
+SSR requires a running Node service. Uploading only static files to WordPress hosting is insufficient.
+
+Run the generated server behind the site's web server with the storefront and WordPress on the same public hostname. Route storefront pages and assets to Node, while preserving WordPress ownership of:
+
+- `/wp-json/`
+- `/wp-admin/`, `/wp-login.php`
+- `/wp-content/`, `/wp-includes/`
+- `/checkout/` and its endpoints
+- Native WooCommerce recovery endpoints, if used
+
+Use deliberate route ownership: React's `/my-account` is the storefront account dashboard. Do not send all WordPress paths to React or replace every route with a static index.html fallback. Existing development forwarding is not included in the standalone production server. Therefore running Node at localhost:4173 alone verifies public SSR, but does not configure shared-cookie production authentication/cart APIs.
+
+Preserve Origin, Host, normal Set-Cookie behavior, and HTTPS through the web-server configuration. Update the separately installed bridge's permitted frontend origin for the real production origin. Do not copy cookies or expose bearer tokens in URLs. The migration does not change web-server configuration or the installed bridge.
+
+## Authentication, signup, cart, and checkout
+
+The separately installed **Alahly SPA Bridge 1.1.1** remains at `C:/laragon/www/alahly/wp-content/plugins/alahly-spa-bridge/alahly-spa-bridge.php`. Its source is managed outside this React repository.
+
+- Login returns a short-lived bearer token. The existing top-level form handoff to WordPress establishes WordPress's HttpOnly login cookies. It validates the return destination and preserves the intended account route.
+- Signup uses the registration settings endpoint and WooCommerce customer creation. Automatic password generation is disabled locally, so signup requires a matching 12–128 character password. Passwords are not stored in browser storage.
+- Duplicate account details show a conflict message. Password recovery remains WordPress-hosted and needs working WordPress email delivery.
+- Orders use the token-derived customer identity on the server, never a customer ID from the browser. Query caches remain scoped by customer and are removed when accounts change.
+- Store API cart mutations use nonces and the browser's cookie session; no Cart Tokens or locally reconstructed carts are introduced.
+- Checkout remains a normal navigation to the configured WordPress `/checkout/`. Authentication handoff is separate from checkout.
+
+## Verification and remaining browser checks
+
+Executed for this migration:
+
+- Framework type generation, TypeScript, production build, lint, and catalog unit tests.
+- Production HTML smoke checks for all routes, product content, metadata, search, pagination, category sorting, empty results, and 404s.
+- An isolated unreachable-upstream check: product page returned HTTP 503 with an error UI.
+- HTTP tests through the development API forwarding: password signup/login, 303 auth handoff, authenticated native checkout, cart quantity preservation, removal, unauthenticated order denial, and separate Mohamed/Omar order sets. The completed test's temporary customer and cart item were removed.
+- Native password-recovery form availability; no reset email was requested.
+
+Browser tooling could not initialize (kernel assets path error). HTTP clients do not verify browser hydration, CORS/SameSite policy, visual parity, client navigation, or duplicate requests during hydration. Email delivery was not tested.
+
+Complete these browser checks at **http://alahly.test:5173**:
+
+1. Open Products with DevTools Console/Network. Check that the initial document contains product cards, hydration has no errors, and the same initial product/category queries are not immediately repeated.
+2. Change search, filters, sorting, and pages; use Back/Forward and refresh category/product URLs.
+3. Check desktop/mobile styling and product gallery/options.
+4. In separate clean sessions, sign in as two Customers; check each account/orders page, refresh, and sign out. Verify no previous account's cached orders appear.
+5. Add a product, change quantity, refresh, and proceed to WordPress checkout. Confirm customer identity and cart contents.
+6. Test password signup and password recovery with a deliverable email address; do not place an order merely to test navigation.

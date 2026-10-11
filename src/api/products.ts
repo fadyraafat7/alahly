@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiGet } from "./client";
+import type { ApiContext } from "./client";
 import type {
   Product,
   ProductPage,
@@ -112,6 +113,7 @@ const pageMeta = (headers: Headers, count: number) => ({
 
 export async function getProducts(
   params: ProductQuery = {},
+  context?: ApiContext,
 ): Promise<ProductPage> {
   const storeParams = {
     ...params,
@@ -124,22 +126,23 @@ export async function getProducts(
         ? undefined
         : Math.round(params.max_price * 100),
   };
-  const { data, headers } = await apiGet<unknown>("/products", storeParams);
+  const { data, headers } = await apiGet<unknown>("/products", storeParams, context);
   const items = z.array(storeProductSchema).parse(data).map(toProduct);
   return { items, ...pageMeta(headers, items.length) };
 }
-export async function getProduct(slug: string): Promise<Product | undefined> {
-  const result = await getProducts({ slug, per_page: 1 });
-  return result.items[0];
+export async function getProduct(slug: string, context?: ApiContext): Promise<Product | null> {
+  const result = await getProducts({ slug, per_page: 1 }, context);
+  return result.items[0] ?? null;
 }
 export async function getVariations(
   productId: number,
+  context?: ApiContext,
 ): Promise<ProductVariation[]> {
   const page = await getProducts({
     parent: productId,
     type: "variation",
     per_page: 100,
-  });
+  }, context);
   return page.items.map((product) => ({
     id: product.id,
     price: product.price,

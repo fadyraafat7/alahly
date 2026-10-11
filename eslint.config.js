@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '.kilo/**']),
+  globalIgnores(['dist', 'build', '.react-router', '.kilo/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -16,7 +16,11 @@ export default defineConfig([
       reactRefresh.configs.vite,
     ],
     languageOptions: {
-      globals: globals.browser,
+      globals: { ...globals.browser, ...globals.node },
     },
+  },
+  {
+    files: ['app/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
   },
 ])

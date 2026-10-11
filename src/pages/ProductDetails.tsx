@@ -1,6 +1,6 @@
 import { Minus, Plus, ShoppingBag, Star } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { ErrorState } from "../components/common/ErrorState";
 import {
   ProductDetailsSkeleton,
