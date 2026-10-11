@@ -11,6 +11,7 @@ import { NotFound } from './pages/NotFound'
 import { Orders } from './pages/Orders'
 import { ProductDetails } from './pages/ProductDetails'
 import { Products } from './pages/Products'
+import { SignUp } from './pages/SignUp'
 
 function App() { return <Layout><Routes>
   <Route path="/" element={<Home />} />
@@ -20,6 +21,7 @@ function App() { return <Layout><Routes>
   <Route path="/cart" element={<Cart />} />
   <Route path="/checkout" element={<Checkout />} />
   <Route path="/login" element={<Login />} />
+  <Route path="/signup" element={<SignUp />} />
   <Route path="/my-account" element={<MyAccount />} />
   <Route path="/my-account/orders" element={<Orders />} />
   <Route path="*" element={<NotFound />} />

@@ -41,6 +41,20 @@ Login can still establish a WordPress session when React runs on localhost: the 
 
 See [customer login verification](docs/customer-login.md) for the observed requests, WordPress configuration and browser acceptance checks.
 
+## Sign up
+
+Customers can open `/signup` or choose **Create an account** on the sign-in page. Sign-in and sign-up links preserve the requested return destination. Successful registration uses the existing WordPress authentication handoff to establish the native login cookie.
+
+The separately installed **Alahly SPA Bridge 1.1.1** now provides `GET /wp-json/alahly-spa/v1/auth/registration` and `POST /wp-json/alahly-spa/v1/auth/register`. This WordPress-side change was applied to `C:/laragon/www/alahly/wp-content/plugins/alahly-spa-bridge/alahly-spa-bridge.php`; deploying the React build alone to another installation will not add those endpoints.
+
+Duplicate emails and usernames return an explicit conflict message (HTTP 409). Existing customers can sign in or follow the password-reset link to WordPress's native recovery form. Opening the form does not send an email until the customer submits it.
+
+The form follows **WooCommerce → Settings → Accounts & Privacy**. On this installation, automatic password generation is disabled (`woocommerce_registration_generate_password=no`), so signup requires a 12–128 character password and confirmation. Registration must be enabled on My Account; usernames remain automatically generated. The **Forgot your password?** link opens WordPress's native email-reset flow. Configure working WordPress email delivery for recovery links. Keep automatic password generation disabled on other installations to retain password fields at signup.
+
+Registration uses `wc_create_new_customer`, retains WooCommerce validation and automatic-login hooks, and accepts only explicit customer fields. It rejects other browser origins and non-JSON requests and applies a basic limit of five validated attempts per five minutes per server-observed IP. The local Vite proxy shares its IP across clients. Passwords are never saved to browser storage. The existing server-side customer ownership checks still control order access.
+
+Verification covered generated and chosen passwords, duplicate/invalid inputs, disabled registration, origin checks, customer roles, registration hooks, rate limiting, and the live HTTP authentication handoff. Temporary test accounts were removed. Browser rendering and delivery of password-setup emails have not been verified.
+
 ## Customer orders
 
 Open **Account → View my orders** or `/my-account/orders` after signing in. The page shows each order's number, date, status, and currency-aware total, with refresh, loading, empty, error, and expired-session states.
