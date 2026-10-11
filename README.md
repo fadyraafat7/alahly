@@ -41,6 +41,14 @@ Login can still establish a WordPress session when React runs on localhost: the 
 
 See [customer login verification](docs/customer-login.md) for the observed requests, WordPress configuration and browser acceptance checks.
 
+## Customer orders
+
+Open **Account → View my orders** or `/my-account/orders` after signing in. The page shows each order's number, date, status, and currency-aware total, with refresh, loading, empty, error, and expired-session states.
+
+Orders come from the existing authenticated `GET /wp-json/alahly-spa/v1/orders` endpoint. WordPress determines ownership from the verified token. React validates the response and scopes its query cache by the signed-in user; customer IDs are never sent as order filters. The installed endpoint returns the latest 50 orders, not a full paginated history.
+
+To check the flow, open the page while signed out, sign in, and confirm that it returns to orders. Repeat with a different customer and verify that the list changes. No checkout or WordPress plugin changes are required for this page.
+
 ## Validation
 
 ```powershell
