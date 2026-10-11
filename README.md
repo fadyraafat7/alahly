@@ -33,6 +33,14 @@ Configure a WooCommerce checkout page at that URL in WooCommerce â†’ Settings â†
 
 Customer login and order lookup require the separately installed and activated **Alahly SPA Bridge** WordPress plugin. Its REST endpoint derives the order customer ID from the server-verified user token; the browser never supplies a customer ID.
 
+React's login endpoint returns a bearer token; it does not create a WordPress browser session. The existing top-level authentication handoff to WordPress sets WordPress's own HttpOnly login cookies. React now sends a validated absolute `return_to` URL so the bridge can return to the intended account route rather than its home-page fallback.
+
+The installed bridge is now configured with `FRONTEND_ORIGIN = 'http://alahly.test:5173'`. Open Vite at that address for a shared cart and a permitted authentication handoff. The bridge requires POST from that exact Origin, validates the return URL's scheme/host/port, runs the normal WordPress login hook, and returns a 303 redirect. Requests from localhost are rejected by this origin policy. The project copy of that plugin was removed; its live source remains in the WordPress installation.
+
+Login can still establish a WordPress session when React runs on localhost: the browser submits the handoff directly to the WordPress origin. However, the cookie-backed React cart on localhost cannot share the WordPress cart cookie. Keep cart and hosted checkout on the same host for cart preservation. Ports 5173 and 80 are different origins, but cookies are scoped by host and path rather than by port; the existing Vite API forwarding supplies same-origin browser requests during development.
+
+See [customer login verification](docs/customer-login.md) for the observed requests, WordPress configuration and browser acceptance checks.
+
 ## Validation
 
 ```powershell

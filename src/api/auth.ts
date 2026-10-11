@@ -15,4 +15,30 @@ export const loginCustomer = (username: string, password: string) => authRequest
 export const getCurrentCustomer = (token: string) => authRequest<AuthUser>('/auth/me', { token })
 export const getCustomerOrders = (token: string) => authRequest<CustomerOrder[]>('/orders', { token })
 export const logoutCustomer = (token: string) => authRequest<{ success: boolean }>('/auth/logout', { method: 'POST', token })
-export const submitWordPressPost = (action: 'alahly_spa_auth_handoff' | 'alahly_spa_logout', fields: Record<string, string>) => { const form = document.createElement('form'); form.method = 'POST'; form.action = `${siteUrl}/wp-admin/admin-post.php`; Object.entries({ action, ...fields }).forEach(([name, value]) => { const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.append(input) }); document.body.append(form); form.submit() }
+
+// WordPress's redirect allowlist expects a full URL, including the frontend port.
+export function getAuthReturnUrl(returnTo = '/my-account'): string {
+  try {
+    const url = new URL(returnTo, window.location.origin)
+    if (url.origin === window.location.origin && !url.username && !url.password) return url.href
+  } catch { /* Use the account page for malformed return URLs. */ }
+  return new URL('/my-account', window.location.origin).href
+}
+
+export function submitWordPressPost(action: 'alahly_spa_auth_handoff' | 'alahly_spa_logout', fields: Record<string, string>) {
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = `${siteUrl}/wp-admin/admin-post.php`
+  const formFields = action === 'alahly_spa_auth_handoff'
+    ? { ...fields, return_to: getAuthReturnUrl(fields.return_to) }
+    : fields
+  Object.entries({ action, ...formFields }).forEach(([name, value]) => {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = name
+    input.value = value
+    form.append(input)
+  })
+  document.body.append(form)
+  form.submit()
+}
