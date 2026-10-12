@@ -7,12 +7,12 @@ import { useOrders } from "../hooks/useOrders";
 import { useAuth } from "../store/AuthContext";
 
 export function Orders() {
-  const { isAuthenticated, isLoading, token, currentUser, logout, sessionScope } = useAuth();
+  const { isAuthenticated, isLoading, token, currentUser, logout, sessionScope, isSessionExpired } = useAuth();
   const orders = useOrders(token, currentUser?.id, sessionScope);
   const sessionExpired =
-    orders.error instanceof ApiError && orders.error.status === 401;
+    isSessionExpired || (orders.error instanceof ApiError && orders.error.status === 401);
 
-  if (!isLoading && !isAuthenticated) {
+  if (!isLoading && !isAuthenticated && !sessionExpired) {
     return <Navigate to="/login?returnTo=/my-account/orders" replace />;
   }
 
@@ -54,9 +54,7 @@ export function Orders() {
         aria-label="Order history"
         aria-busy={isLoading || orders.isFetching}
       >
-        {isLoading || orders.isPending ? (
-          <OrdersSkeleton />
-        ) : sessionExpired ? (
+        {sessionExpired ? (
           <div
             role="alert"
             className="rounded-2xl border border-ink/10 bg-white p-8 text-center"
@@ -75,6 +73,8 @@ export function Orders() {
               Sign in again
             </button>
           </div>
+        ) : isLoading || orders.isPending ? (
+          <OrdersSkeleton />
         ) : orders.isError ? (
           <ErrorState
             title="Orders unavailable"

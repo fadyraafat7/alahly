@@ -155,6 +155,39 @@ Deploy this small change to the separately managed plugin as well as the React b
 
 ## Verification and remaining browser checks
 
+The follow-up code-review fixes are scoped to these files:
+
+| Files | Root cause and correction |
+| --- | --- |
+| `src/store/AuthContext.tsx`, `src/pages/Orders.tsx`, `src/components/layout/Header.tsx`, `src/pages/MyAccount.tsx`, `src/api/auth.ts` | Orders called only React logout, and automatic 401 cleanup removed the error before its expiry action could reliably render. Authentication now retains a non-sensitive expiry flag; every explicit logout clears local state, attempts bounded token revocation, and submits the same native WordPress logout handoff once. |
+| `src/pages/ProductDetails.tsx` | Two source strings actually contained mojibake. Restored their ellipsis and em dash. Other strings flagged in the review were valid UTF-8 displayed incorrectly by PowerShell and were left unchanged. |
+| `src/types/auth.ts`, `src/api/auth.ts` | Login/profile responses were trusted through TypeScript casts. Both now validate against shared Zod user/session schemas before returning data. |
+| `src/api/client.ts`, `src/api/auth.ts` | Raw JSON parser errors and malformed error-message fields could escape to callers. A shared response reader emits safe `ApiError` messages, retains HTTP statuses such as 401, and preserves cancellation. |
+| `src/api/products.ts`, `src/api/cart.ts` | Zod diagnostics escaped directly; missing cart items could default to an empty successful cart. Schema failures now become safe errors, and a successful cart response must contain its items array. |
+| `tests/api.test.mjs`, `tests/catalog.test.mjs` | Added regression coverage for the Orders expiry action after cleanup, one native logout submission despite failed revocation, private-cache switching, invalid JSON/shapes, response-body cancellation, cart checkout blocking, and exact Unicode corrections. |
+
+Follow-up verification passed: `npm run typecheck`, `npm run lint`, all 21 `npm test` tests, `npm run build`, and all four `npm run test:ssr:regression` tests. The actual updated login/profile API functions also passed against a seeded Customer on local WordPress; the temporary bearer token was revoked and its subsequent profile request returned 401. These live requests ran outside a browser and do not establish WordPress cookie clearing or customer switching. No separately installed WordPress files were modified during this follow-up.
+
+Exact browser verification for expired sessions and customer switching remains required:
+
+1. Start Laragon Apache/MySQL and `npm run dev`. Open a clean browser session at `http://alahly.test:5173`, enable DevTools Network **Preserve log**, and sign in as Customer A. Confirm the login handoff completes and `/my-account/orders` contains only A's orders.
+2. On the Orders page, revoke only the React bearer token using this Console command. It does not copy or edit cookies:
+
+   ```js
+   await fetch('/wp-json/alahly-spa/v1/auth/logout', {
+     method: 'POST',
+     headers: { Authorization: `Bearer ${sessionStorage.getItem('alahly-auth-token')}` },
+     cache: 'no-store',
+   });
+   ```
+
+3. Click **Refresh orders**. Confirm `/orders` returns 401, React removes the stored auth token and private orders, and **Sign in again** remains visible. Click it and confirm one top-level POST to `http://alahly.test/wp-admin/admin-post.php` with `action=alahly_spa_logout`, followed by the existing bridge's 303 redirect to the storefront home page.
+4. Inspect the native logout response's Set-Cookie headers and WordPress-origin cookies in DevTools Application. Open `http://alahly.test/checkout/` and verify WordPress now treats the session as a guest. A submitted form alone does not prove this; if logout fails, record its status before continuing.
+5. Return to the storefront, sign in as Customer B, and verify the authentication handoff completes. Open B's Orders page, refresh it, and use Back/Forward; A's orders must not appear. Add a test product and open native checkout; confirm B's identity and the intended cart contents. Do not place an order; remove the test item afterward.
+6. Repeat normal sign-out from My Account and the mobile header. If testing failed revocation, block only `/wp-json/alahly-spa/v1/auth/logout` in DevTools; leave WordPress's `admin-post.php` reachable. Native logout should still be submitted. Full WordPress downtime cannot establish cookie clearing.
+
+Browser verification was not executed in this follow-up. Earlier automation stopped because it could not reliably identify Chrome's current URL for its safety checks; it was not retried here. These cookie, redirect, and checkout assertions remain unverified. The unit test captures the submitted form using a test DOM and controls the Orders hooks; it does not execute WordPress logout or emulate browser cookie policy.
+
 Executed during the cache/session hardening:
 
 - Framework type generation, TypeScript, production build, lint, and 14 unit/API regression tests.

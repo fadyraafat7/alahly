@@ -1,8 +1,12 @@
 import { z } from 'zod'
 
+export const authUserSchema = z.object({
+  id: z.number().int().positive(), email: z.string(), name: z.string(),
+})
+
 export const authSessionSchema = z.object({
   token: z.string().min(1),
-  user: z.object({ id: z.number().int().positive(), email: z.string(), name: z.string() }),
+  user: authUserSchema,
 })
 
 export const registrationSettingsSchema = z.object({
@@ -25,4 +29,5 @@ export interface RegistrationInput {
 }
 
 export type AuthSession = z.infer<typeof authSessionSchema>
+export type AuthUser = z.infer<typeof authUserSchema>
 export type RegistrationResult = z.infer<typeof registrationResultSchema>

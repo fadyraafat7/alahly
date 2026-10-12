@@ -12,7 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getCurrentCustomer,
   loginCustomer,
-  logoutCustomer,
+  logoutWithWordPressHandoff,
   registerCustomer,
   type AuthUser,
 } from "../api/auth";
@@ -36,6 +36,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   token?: string;
   sessionScope: number;
+  isSessionExpired: boolean;
 }
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -46,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     scope: 0,
   }));
   const { token, scope } = session;
+  const [isSessionExpired, setSessionExpired] = useState(false);
   const epoch = useRef(createSessionEpoch());
   const client = useQueryClient();
   const user = useQuery({
@@ -59,10 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refetchInterval: 60_000,
   });
 
-  const clearSession = useCallback(() => {
+  const clearSession = useCallback((expired = false) => {
     const next = epoch.current.advance();
     sessionStorage.removeItem(storageKey);
     setSession({ token: undefined, scope: next });
+    setSessionExpired(expired);
     clearPrivateCache(client);
   }, [client]);
 
@@ -71,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (event.type !== 'updated' || event.action.type !== 'error' || !token || !isPrivateKey(query.queryKey)) return;
     const queryScope = query.queryKey[0] === 'orders' ? query.queryKey[1] : query.queryKey[2];
     if (queryScope === scope && query.state.error instanceof ApiError && query.state.error.status === 401) {
-      clearSession();
+      clearSession(true);
     }
   }), [client, token, scope, clearSession]);
 
@@ -82,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.setItem(storageKey, result.token);
       client.setQueryData(profileKey(next), result.user);
       setSession({ token: result.token, scope: next });
+      setSessionExpired(false);
     },
     [client],
   );
@@ -108,8 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     // Clear private UI/cache immediately, even if remote revocation is unavailable.
-    clearSession();
-    if (token) await logoutCustomer(token).catch(() => undefined);
+    await logoutWithWordPressHandoff(() => clearSession(), token);
   }, [clearSession, token]);
 
   const unauthorized = user.error instanceof ApiError && user.error.status === 401;
@@ -124,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       token: hydrated ? token : undefined,
       sessionScope: scope,
+      isSessionExpired,
     }),
     [
       hydrated,
@@ -136,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       scope,
       unauthorized,
+      isSessionExpired,
     ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -4,6 +4,17 @@ import { catalogParams, categoryParams, normalizeProductQuery } from '../src/uti
 import { catalogPolicy, categoryPolicy, retryCatalog } from '../src/query/policy.ts'
 import { hashKey } from '@tanstack/query-core'
 import { safeHtml } from '../src/utils/html.ts'
+import { readFile } from 'node:fs/promises'
+
+test('product details use valid Unicode punctuation without corrupting existing valid copy', async () => {
+  const read = file=>readFile(new URL('../'+file,import.meta.url),'utf8')
+  const details = await read('src/pages/ProductDetails.tsx')
+  assert.ok(details.includes('Loading available options…'))
+  assert.ok(details.includes('product.sku || "—"'))
+  assert.ok(!details.includes('â€¦') && !details.includes('â€”'))
+  assert.ok((await read('src/pages/SignUp.tsx')).includes('Use 12–128 characters.'))
+  assert.ok((await read('src/pages/Orders.tsx')).includes('· Newest first'))
+})
 
 test('catalog URLs normalize invalid inputs consistently for loaders and hooks', () => {
   const params = catalogParams(new URLSearchParams('page=-3&category=x&min_price=0&max_price=NaN&orderby=unknown&on_sale=true'))

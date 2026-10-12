@@ -1,7 +1,6 @@
 import { LogOut, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router";
 import { useState } from "react";
-import { submitWordPressPost } from "../../api/auth";
 import { useCart } from "../../store/CartContext";
 import { useAuth } from "../../store/AuthContext";
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -21,7 +20,6 @@ export function Header() {
   };
   const signOut = async () => {
     await logout();
-    submitWordPressPost("alahly_spa_logout", {});
   };
   return (
     <header className="sticky top-0 z-30 border-b border-ink/10 bg-cream/95 backdrop-blur">

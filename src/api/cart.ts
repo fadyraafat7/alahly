@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiRequest } from "./client";
+import { apiRequest, ApiError } from "./client";
 import type { CartItem } from "../types/cart";
 import type { ProductImage } from "../types/product";
 
@@ -31,7 +31,7 @@ const itemSchema = z.object({
     .array(z.object({ attribute: z.string(), value: z.string() }))
     .default([]),
 });
-const cartSchema = z.object({ items: z.array(itemSchema).default([]) });
+const cartSchema = z.object({ items: z.array(itemSchema) });
 const readNonce = () => sessionStorage.getItem(nonceKey) ?? undefined;
 const rememberNonce = (headers: Headers) => {
   const nonce = headers.get("Nonce");
@@ -80,7 +80,9 @@ const toCartItem = (item: z.infer<typeof itemSchema>): CartItem => ({
 const cartHeaders = () => (readNonce() ? { Nonce: readNonce()! } : undefined);
 const sync = (data: unknown, headers: Headers) => {
   rememberNonce(headers);
-  return cartSchema.parse(data).items.map(toCartItem);
+  const result = cartSchema.safeParse(data);
+  if (!result.success) throw new ApiError('We could not confirm your cart. Refresh your bag before continuing.');
+  return result.data.items.map(toCartItem);
 };
 
 export async function getStoreCart(signal?: AbortSignal): Promise<CartItem[]> {

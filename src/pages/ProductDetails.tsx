@@ -154,7 +154,7 @@ export function ProductDetails() {
             ))}
             {variations.isLoading && (
               <p className="mt-4 text-sm text-ink/55">
-                Loading available optionsâ€¦
+                Loading available options…
               </p>
             )}
             <div className="mt-8 flex flex-wrap gap-3">
@@ -198,7 +198,7 @@ export function ProductDetails() {
             <dl className="mt-8 grid gap-3 border-t border-ink/10 pt-6 text-sm">
               <div className="flex gap-2">
                 <dt className="font-bold">SKU:</dt>
-                <dd>{product.sku || "â€”"}</dd>
+                <dd>{product.sku || "—"}</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="font-bold">Categories:</dt>

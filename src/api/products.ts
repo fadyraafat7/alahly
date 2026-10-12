@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiGet } from "./client";
+import { apiGet, ApiError } from "./client";
 import { normalizeProductQuery } from '../utils/catalogParams';
 import type { ApiContext } from "./client";
 import type {
@@ -129,7 +129,9 @@ export async function getProducts(
         : Math.round(params.max_price * 100),
   };
   const { data, headers } = await apiGet<unknown>("/products", storeParams, context);
-  const items = z.array(storeProductSchema).parse(data).map(toProduct);
+  const result = z.array(storeProductSchema).safeParse(data);
+  if (!result.success) throw new ApiError('We could not read the products. Please try again.');
+  const items = result.data.map(toProduct);
   return { items, ...pageMeta(headers, items.length) };
 }
 export async function getProduct(slug: string, context?: ApiContext): Promise<Product | null> {

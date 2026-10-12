@@ -1,6 +1,5 @@
 import { Link, Navigate } from "react-router";
 import { LogOut, Package } from "lucide-react";
-import { submitWordPressPost } from "../api/auth";
 import { useAuth } from "../store/AuthContext";
 export function MyAccount() {
   const { currentUser, isAuthenticated, isLoading, logout } = useAuth();
@@ -14,7 +13,6 @@ export function MyAccount() {
     return <Navigate to="/login?returnTo=/my-account" replace />;
   const signOut = async () => {
     await logout();
-    submitWordPressPost("alahly_spa_logout", {});
   };
   return (
     <main className="mx-auto max-w-5xl px-6 py-14">

@@ -1,26 +1,29 @@
-import { ApiError } from './client'
+import { ApiError, readApiResponse } from './client'
 import { customerOrdersSchema } from '../types/order'
-import { registrationResultSchema, registrationSettingsSchema } from '../types/auth'
+import { authSessionSchema, authUserSchema, registrationResultSchema, registrationSettingsSchema } from '../types/auth'
 import type { RegistrationInput } from '../types/auth'
+export type { AuthUser } from '../types/auth'
 import { requestSignal } from '../utils/requestSignal'
 
 const baseUrl = (import.meta.env.VITE_WP_AUTH_API_URL || '/wp-json/alahly-spa/v1').replace(/\/$/, '')
 const siteUrl = (import.meta.env.VITE_WP_SITE_URL || 'http://alahly.test').replace(/\/$/, '')
 export const passwordResetUrl = `${siteUrl}/wp-login.php?action=lostpassword`
-export interface AuthUser { id: number; email: string; name: string }
-interface LoginResponse { token: string; user: AuthUser }
 
 async function authRequest<T>(path: string, options: { method?: 'GET' | 'POST'; token?: string; body?: object; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
+  const signal = requestSignal(options.signal, options.timeoutMs ?? 10_000)
   try {
-    const response = await fetch(new URL(`${baseUrl}${path}`, window.location.origin), { method: options.method ?? 'GET', signal: requestSignal(options.signal, options.timeoutMs ?? 10_000), cache: 'no-store', headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}) }, body: options.body ? JSON.stringify(options.body) : undefined })
-    if (!response.ok) { const body = await response.json().catch(() => null) as { message?: string } | null; throw new ApiError(body?.message ?? 'Authentication request failed.', response.status) }
-    return await response.json() as T
+    const response = await fetch(new URL(`${baseUrl}${path}`, window.location.origin), { method: options.method ?? 'GET', signal, cache: 'no-store', headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}) }, body: options.body ? JSON.stringify(options.body) : undefined })
+    return await readApiResponse(response, 'The account service returned an invalid response. Please try again.', 'Authentication request failed.', signal) as T
   } catch (error) {
     if (options.signal?.aborted || error instanceof ApiError) throw error
     throw new ApiError('Unable to reach the account service. Please try again.')
   }
 }
-export const loginCustomer = (username: string, password: string) => authRequest<LoginResponse>('/auth/login', { method: 'POST', body: { username, password } })
+export async function loginCustomer(username: string, password: string) {
+  const result = authSessionSchema.safeParse(await authRequest<unknown>('/auth/login', { method: 'POST', body: { username, password } }))
+  if (!result.success) throw new ApiError('We could not confirm your sign-in. Please try again.')
+  return result.data
+}
 export async function getRegistrationSettings(signal?: AbortSignal) {
   const result = registrationSettingsSchema.safeParse(await authRequest<unknown>('/auth/registration', { signal }))
   if (!result.success) throw new ApiError('Account registration is unavailable. Please try again later.')
@@ -31,7 +34,11 @@ export async function registerCustomer(input: RegistrationInput) {
   if (!result.success) throw new ApiError('We could not confirm registration. Check your email or try signing in before submitting again.')
   return result.data
 }
-export const getCurrentCustomer = (token: string, signal?: AbortSignal) => authRequest<AuthUser>('/auth/me', { token, signal })
+export async function getCurrentCustomer(token: string, signal?: AbortSignal) {
+  const result = authUserSchema.safeParse(await authRequest<unknown>('/auth/me', { token, signal }))
+  if (!result.success) throw new ApiError('We could not read your account. Please try again.')
+  return result.data
+}
 export async function getCustomerOrders(token: string, signal?: AbortSignal) {
   // Identity is resolved by WordPress from the token, never from a customer ID in the URL.
   const data = await authRequest<unknown>('/orders', { token, signal })
@@ -40,6 +47,17 @@ export async function getCustomerOrders(token: string, signal?: AbortSignal) {
   return result.data
 }
 export const logoutCustomer = (token: string) => authRequest<{ success: boolean }>('/auth/logout', { method: 'POST', token, timeoutMs: 3_000 })
+
+export async function logoutWithWordPressHandoff(clearSession: () => void, token?: string) {
+  clearSession();
+  try {
+    if (token) await logoutCustomer(token);
+  } catch {
+    // Expired tokens and unavailable revocation must not skip native logout.
+  } finally {
+    submitWordPressPost('alahly_spa_logout', {});
+  }
+}
 
 // WordPress's redirect allowlist expects a full URL, including the frontend port.
 export function getAuthReturnUrl(returnTo = '/my-account'): string {
