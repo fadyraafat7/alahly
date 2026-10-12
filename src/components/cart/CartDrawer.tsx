@@ -3,8 +3,9 @@ import { Link } from "react-router";
 import { useCart } from "../../store/CartContext";
 import { CartItem } from "./CartItem";
 import { CartSummary } from "./CartSummary";
+import { CartFeedback } from './CartFeedback';
 export function CartDrawer() {
-  const { isOpen, setOpen, items } = useCart();
+  const { isOpen, setOpen, items, isSyncing, error } = useCart();
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50">
@@ -28,9 +29,10 @@ export function CartDrawer() {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-5">
+          <CartFeedback />
           {items.length ? (
             items.map((item) => <CartItem key={item.key} item={item} />)
-          ) : (
+          ) : isSyncing ? <p role="status" className="py-16 text-center">Loading your bag...</p> : error ? null : (
             <div className="py-16 text-center">
               <p className="font-display text-xl">Your bag is empty.</p>
               <Link

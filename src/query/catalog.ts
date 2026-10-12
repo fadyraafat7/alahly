@@ -3,34 +3,46 @@ import { getProducts, getProduct, getVariations } from "../api/products";
 import { getCategories, getCategory } from "../api/categories";
 import type { ApiContext } from "../api/client";
 import type { ProductQuery } from "../types/product";
+import { normalizeProductQuery } from '../utils/catalogParams';
+import { catalogPolicy, categoryPolicy, retryCatalog } from './policy';
+const policy = (context?: ApiContext, category = false) => ({
+  ...(category ? categoryPolicy : catalogPolicy),
+  retry: context ? false as const : retryCatalog,
+  ...(context ? { gcTime: Infinity, refetchInterval: false as const } : {}),
+});
 export const productsQuery = (
   params: ProductQuery = {},
   context?: ApiContext,
-) =>
-  queryOptions({
-    queryKey: ["products", params],
+) => {
+  const normalized = normalizeProductQuery(params);
+  return queryOptions({
+    ...policy(context),
+    queryKey: ["products", normalized],
     queryFn: ({ signal }) =>
-      getProducts(params, { ...context, signal: context?.signal ?? signal }),
+      getProducts(normalized, { ...context, signal: context?.signal ?? signal }),
   });
+};
 export const productQuery = (slug: string, context?: ApiContext) =>
   queryOptions({
-    queryKey: ["product", slug],
-    queryFn: () => getProduct(slug, context),
+    ...policy(context),
+    queryKey: ["product", slug.trim()],
+    queryFn: ({ signal }) => getProduct(slug.trim(), { ...context, signal: context?.signal ?? signal }),
   });
 export const variationsQuery = (id: number, context?: ApiContext) =>
   queryOptions({
+    ...policy(context),
     queryKey: ["variations", id],
-    queryFn: () => getVariations(id, context),
+    queryFn: ({ signal }) => getVariations(id, { ...context, signal: context?.signal ?? signal }),
   });
 export const categoriesQuery = (context?: ApiContext) =>
   queryOptions({
+    ...policy(context, true),
     queryKey: ["categories"],
-    queryFn: () => getCategories(context),
-    staleTime: 300_000,
+    queryFn: ({ signal }) => getCategories({ ...context, signal: context?.signal ?? signal }),
   });
 export const categoryQuery = (slug: string, context?: ApiContext) =>
   queryOptions({
-    queryKey: ["category", slug],
-    queryFn: () => getCategory(slug, context),
-    staleTime: 300_000,
+    ...policy(context, true),
+    queryKey: ["category", slug.trim()],
+    queryFn: ({ signal }) => getCategory(slug.trim(), { ...context, signal: context?.signal ?? signal }),
   });

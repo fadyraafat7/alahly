@@ -2,7 +2,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
@@ -20,6 +22,8 @@ import type {
   RegistrationResult,
 } from "../types/auth";
 import { useHydrated } from "../hooks/useHydrated";
+import { ApiError } from '../api/client';
+import { clearPrivateCache, createSessionEpoch, isPrivateKey, profileKey } from '../query/privateSession';
 
 const storageKey = "alahly-auth-token";
 interface AuthContextValue {
@@ -31,38 +35,62 @@ interface AuthContextValue {
   register: (input: RegistrationInput) => Promise<RegistrationResult>;
   logout: () => Promise<void>;
   token?: string;
+  sessionScope: number;
 }
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const hydrated = useHydrated();
-  const [token, setToken] = useState(() =>
-    typeof window === "undefined"
-      ? undefined
-      : (sessionStorage.getItem(storageKey) ?? undefined),
-  );
+  const [session, setSession] = useState(() => ({
+    token: typeof window === 'undefined' ? undefined : sessionStorage.getItem(storageKey) ?? undefined,
+    scope: 0,
+  }));
+  const { token, scope } = session;
+  const epoch = useRef(createSessionEpoch());
   const client = useQueryClient();
   const user = useQuery({
-    queryKey: ["auth", "current-user"],
-    queryFn: () => getCurrentCustomer(token!),
+    queryKey: profileKey(scope),
+    queryFn: ({ signal }) => getCurrentCustomer(token!, signal),
     enabled: hydrated && Boolean(token),
     retry: false,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
 
+  const clearSession = useCallback(() => {
+    const next = epoch.current.advance();
+    sessionStorage.removeItem(storageKey);
+    setSession({ token: undefined, scope: next });
+    clearPrivateCache(client);
+  }, [client]);
+
+  useEffect(() => client.getQueryCache().subscribe((event) => {
+    const query = event.query;
+    if (event.type !== 'updated' || event.action.type !== 'error' || !token || !isPrivateKey(query.queryKey)) return;
+    const queryScope = query.queryKey[0] === 'orders' ? query.queryKey[1] : query.queryKey[2];
+    if (queryScope === scope && query.state.error instanceof ApiError && query.state.error.status === 401) {
+      clearSession();
+    }
+  }), [client, token, scope, clearSession]);
+
   const acceptSession = useCallback(
-    (result: AuthSession) => {
-      client.removeQueries({ queryKey: ["orders"] });
+    (result: AuthSession, next: number) => {
+      if (!epoch.current.isCurrent(next)) throw new Error('Sign-in was superseded. Please try again.');
+      clearPrivateCache(client);
       sessionStorage.setItem(storageKey, result.token);
-      setToken(result.token);
-      client.setQueryData(["auth", "current-user"], result.user);
+      client.setQueryData(profileKey(next), result.user);
+      setSession({ token: result.token, scope: next });
     },
     [client],
   );
 
   const login = useCallback(
     async (username: string, password: string) => {
+      const next = epoch.current.advance();
       const result = await loginCustomer(username, password);
-      acceptSession(result);
+      acceptSession(result, next);
       return result.token;
     },
     [acceptSession],
@@ -70,31 +98,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (input: RegistrationInput) => {
+      const next = epoch.current.advance();
       const result = await registerCustomer(input);
-      if (result.authenticated) acceptSession(result);
+      if (result.authenticated) acceptSession(result, next);
       return result;
     },
     [acceptSession],
   );
 
   const logout = useCallback(async () => {
+    // Clear private UI/cache immediately, even if remote revocation is unavailable.
+    clearSession();
     if (token) await logoutCustomer(token).catch(() => undefined);
-    sessionStorage.removeItem(storageKey);
-    setToken(undefined);
-    client.removeQueries({ queryKey: ["auth"] });
-    client.removeQueries({ queryKey: ["orders"] });
-  }, [client, token]);
+  }, [clearSession, token]);
 
+  const unauthorized = user.error instanceof ApiError && user.error.status === 401;
   const value = useMemo(
     () => ({
-      currentUser: hydrated ? user.data : undefined,
-      isAuthenticated: hydrated && Boolean(token && user.data),
+      currentUser: hydrated && token && !unauthorized ? user.data : undefined,
+      isAuthenticated: hydrated && !unauthorized && Boolean(token && user.data),
       isLoading: !hydrated || (Boolean(token) && user.isPending),
       error: user.error,
       login,
       register,
       logout,
       token: hydrated ? token : undefined,
+      sessionScope: scope,
     }),
     [
       hydrated,
@@ -105,6 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      scope,
+      unauthorized,
     ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

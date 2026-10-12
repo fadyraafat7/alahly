@@ -5,7 +5,7 @@ import { useCart } from "../../store/CartContext";
 import { discountPercent, formatPrice } from "../../utils/format";
 const fallback = "https://placehold.co/800x800/ebe9df/315b3d?text=Alahly";
 export function ProductCard({ product }: { product: Product }) {
-  const { addItem } = useCart();
+  const { addItem, isSyncing } = useCart();
   const sale = product.sale_price || (product.on_sale ? product.price : "");
   const discount = discountPercent(product.regular_price, sale);
   const inStock = product.stock_status !== "outofstock";
@@ -61,7 +61,7 @@ export function ProductCard({ product }: { product: Product }) {
         </div>
         <div className="mt-4 flex gap-2">
           <button
-            disabled={!inStock}
+            disabled={!inStock || isSyncing}
             onClick={() => addItem(product)}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-moss px-3 py-2.5 text-xs font-bold text-white transition hover:bg-ink disabled:cursor-not-allowed disabled:bg-ink/30"
           >

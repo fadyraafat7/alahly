@@ -7,8 +7,8 @@ import { useOrders } from "../hooks/useOrders";
 import { useAuth } from "../store/AuthContext";
 
 export function Orders() {
-  const { isAuthenticated, isLoading, token, currentUser, logout } = useAuth();
-  const orders = useOrders(token, currentUser?.id);
+  const { isAuthenticated, isLoading, token, currentUser, logout, sessionScope } = useAuth();
+  const orders = useOrders(token, currentUser?.id, sessionScope);
   const sessionExpired =
     orders.error instanceof ApiError && orders.error.status === 401;
 

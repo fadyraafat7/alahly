@@ -5,7 +5,9 @@ export function createQueryClient() {
       queries: {
         staleTime: 60_000,
         retry: 1,
-        refetchOnWindowFocus: false,
+        // SSR roots must not retain request caches through browser GC timers.
+        gcTime: typeof window === 'undefined' ? Infinity : 300_000,
+        refetchOnWindowFocus: true,
       },
     },
   });

@@ -7,6 +7,7 @@ async function check(path, expected = 200) {
   const response = await fetch(base + path)
   const html = await response.text()
   assert.equal(response.status, expected, path)
+  assert.equal(response.headers.get('Cache-Control'), 'private, no-store', path + ': cache policy')
   assert.ok(html.includes('<title>'), path + ': title missing')
   assert.ok(!html.includes('sessionStorage is not defined'), path)
   assert.ok(!html.includes('window is not defined'), path)

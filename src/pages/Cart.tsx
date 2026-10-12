@@ -2,8 +2,10 @@ import { Link } from "react-router";
 import { CartItem } from "../components/cart/CartItem";
 import { CartSummary } from "../components/cart/CartSummary";
 import { useCart } from "../store/CartContext";
+import { CartFeedback } from '../components/cart/CartFeedback';
 export function Cart() {
-  const { items, isSyncing } = useCart();
+  const { items, isSyncing, error } = useCart();
+  if (error && !items.length) return <main className="mx-auto max-w-4xl px-6 py-20"><CartFeedback /></main>;
   if (isSyncing && !items.length)
     return (
       <main className="mx-auto max-w-4xl px-6 py-20" role="status">
@@ -33,6 +35,7 @@ export function Cart() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-10 sm:py-14">
       <h1 className="font-display text-5xl font-bold">Your bag</h1>
+      <CartFeedback />
       <div className="mt-9 grid gap-8 lg:grid-cols-[1fr_360px]">
         <section className="divide-y divide-ink/10 rounded-2xl bg-white px-5 shadow-sm">
           {items.map((item) => (

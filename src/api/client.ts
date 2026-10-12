@@ -1,3 +1,4 @@
+import { requestSignal } from '../utils/requestSignal'
 const browserBaseUrl = (import.meta.env.VITE_WC_STORE_API_URL || '/wp-json/wc/store/v1').replace(/\/$/, '')
 export class ApiError extends Error {
   status?: number
@@ -18,15 +19,16 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   })
   let response: Response
   try {
-    const timeout = AbortSignal.timeout(15_000)
     response = await fetch(url, {
       method: options.method ?? 'GET',
-      signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
+      signal: requestSignal(options.signal),
+      cache: path === '/cart' || path.startsWith('/cart/') ? 'no-store' : 'default',
       credentials: typeof window === 'undefined' ? 'omit' : 'include',
       headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
       body: options.body ? JSON.stringify(options.body) : undefined,
     })
-  } catch {
+  } catch (error) {
+    if (options.signal?.aborted) throw error
     throw new ApiError('Unable to reach the WooCommerce Store API. Please try again.')
   }
   if (!response.ok) {

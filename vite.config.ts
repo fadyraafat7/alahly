@@ -7,10 +7,13 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   // Only server modules read these; never expose all env variables through define.
-  for (const key of ['WC_STORE_API_URL', 'STOREFRONT_URL']) {
+  for (const key of ['WC_STORE_API_URL', 'STOREFRONT_URL', 'WC_LOADER_TIMEOUT_MS']) {
     if (!process.env[key] && env[key]) process.env[key] = env[key]
   }
   return {
+    // Retain deployment asset manifests. React Router otherwise removes their
+    // empty .vite directories, which can race Windows directory watchers.
+    build: { manifest: true },
     server: {
       host: true, port: 5173, strictPort: true,
       allowedHosts: ['alahly.test'],

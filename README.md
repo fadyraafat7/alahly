@@ -18,7 +18,7 @@ Open **http://alahly.test:5173**. WordPress must be running at the configured `V
 - Home, product listings, categories, and product details load public Store API data on the server.
 - Route loaders create a fresh QueryClient per request, fetch using shared query definitions, and return a dehydrated public cache through React Router loader data. Existing hooks consume that cache through HydrationBoundary; fresh initial data does not need a second browser fetch.
 - Search, filters, pagination, and sorting use URL parameters. Category pagination and sorting now survive refresh.
-- Titles, descriptions, canonical links, and robots metadata come from route modules. Missing products/categories return HTTP 404; upstream failures return a 503 error page.
+- Titles, descriptions, canonical links, and robots metadata come from route modules. Missing products/categories return HTTP 404; upstream failures return 503 and the loader deadline returns 504.
 - HTML descriptions use the same sanitization policy in Node and the browser.
 - Auth/session state, customer orders, registration actions, and cookie-backed cart operations remain client-side. The server renders loading states instead of pretending to know the current customer or cart.
 - No customer cookies, cart nonces, or bearer tokens are forwarded by public loaders or included in their hydration data. Server QueryClients are never shared between requests.
@@ -31,6 +31,7 @@ npm run typecheck
 npm run build
 npm run lint
 npm test
+npm run test:ssr:regression
 npm start
 ```
 
@@ -51,9 +52,11 @@ $env:SSR_TEST_URL = 'http://127.0.0.1:4173'
 npm run test:ssr
 ```
 
-Smoke tests use real WooCommerce products and check rendered HTML after removing script blocks. They require populated product/category data and at least two product pages. `npm test` checks URL parsing and HTML sanitization without contacting WordPress.
+Smoke tests use real WooCommerce products and check rendered HTML after removing script blocks. They require populated product/category data and at least two product pages. `npm test` covers parameters, sanitization, private-cache races, timeouts, cart coordination, and configuration without contacting WordPress. `npm run test:ssr:regression` requires a current production build and tests its actual request handler against in-memory Store API fixtures; fixture products never enter application source or WordPress.
 
 On memory-constrained Windows systems, set `$env:RAYON_NUM_THREADS = '2'` before building. Do not run two development servers against the same Vite dependency cache. React Router v7 currently prints Vite envFile deprecation and v8 future-flag notices; these are upstream tooling notices, not failed builds.
+
+Vite asset manifests are explicitly retained for deployment. This also avoids the observed Windows `EBUSY` failure when React Router deletes newly emptied `.vite` directories after an otherwise successful build. No dependency code or security checks were patched.
 
 ## Environment
 
@@ -66,9 +69,12 @@ See `.env.example`. Every `VITE_*` value is public and embedded during the clien
 | `VITE_WP_SITE_URL` | WordPress origin for native authentication, recovery, and checkout. |
 | `WC_STORE_API_URL` | Optional server-only absolute Store API override. Defaults to the configured browser API path resolved against the WordPress origin. |
 | `STOREFRONT_URL` | Server-side canonical storefront origin; defaults to the WordPress origin. |
+| `WC_LOADER_TIMEOUT_MS` | Server-only deadline across the entire loader, default 10000 ms, allowed range 100-30000. |
 | `HOST`, `PORT` | Production Node listener address and port. |
 
 Vite reads `.env` in development/build. Set server-only values in the production process environment; `react-router-serve` does not automatically load this project's `.env`. No WooCommerce Consumer Key or Secret is needed for public catalog SSR.
+
+The server validates configuration when its bundle loads. URLs must use HTTP(S) and exclude credentials, query strings, and fragments. Runtime `VITE_*` overrides that disagree with the client build are rejected: rebuild when changing the public store. An explicit `WC_STORE_API_URL` can use an internal hostname, but operators must ensure it points to the same WooCommerce installation as the browser.
 
 ## Production deployment
 
@@ -84,11 +90,11 @@ Run the generated server behind the site's web server with the storefront and Wo
 
 Use deliberate route ownership: React's `/my-account` is the storefront account dashboard. Do not send all WordPress paths to React or replace every route with a static index.html fallback. Existing development forwarding is not included in the standalone production server. Therefore running Node at localhost:4173 alone verifies public SSR, but does not configure shared-cookie production authentication/cart APIs.
 
-Preserve Origin, Host, normal Set-Cookie behavior, and HTTPS through the web-server configuration. Update the separately installed bridge's permitted frontend origin for the real production origin. Do not copy cookies or expose bearer tokens in URLs. The migration does not change web-server configuration or the installed bridge.
+Preserve Origin, Host, normal Set-Cookie behavior, and HTTPS through the web-server configuration. Update the separately installed bridge's permitted frontend origin for the real production origin. Do not copy cookies or expose bearer tokens in URLs. Do not override private/no-store response headers with shared-cache rules. Web-server configuration is unchanged; the bridge-only header change is documented below.
 
 ## Authentication, signup, cart, and checkout
 
-The separately installed **Alahly SPA Bridge 1.1.1** remains at `C:/laragon/www/alahly/wp-content/plugins/alahly-spa-bridge/alahly-spa-bridge.php`. Its source is managed outside this React repository.
+The separately installed **Alahly SPA Bridge 1.1.2** remains at `C:/laragon/www/alahly/wp-content/plugins/alahly-spa-bridge/alahly-spa-bridge.php`. Its source is managed outside this React repository.
 
 - Login returns a short-lived bearer token. The existing top-level form handoff to WordPress establishes WordPress's HttpOnly login cookies. It validates the return destination and preserves the intended account route.
 - Signup uses the registration settings endpoint and WooCommerce customer creation. Automatic password generation is disabled locally, so signup requires a matching 12–128 character password. Passwords are not stored in browser storage.
@@ -97,17 +103,81 @@ The separately installed **Alahly SPA Bridge 1.1.1** remains at `C:/laragon/www/
 - Store API cart mutations use nonces and the browser's cookie session; no Cart Tokens or locally reconstructed carts are introduced.
 - Checkout remains a normal navigation to the configured WordPress `/checkout/`. Authentication handoff is separate from checkout.
 
+## Cache and lifecycle policy
+
+Implementation map (all changes are scoped to this hardening):
+
+| Files | Purpose |
+| --- | --- |
+| `app/entry.server.tsx`, `app/lib/cachePolicy.ts` | Apply the same no-store policy to HTML and route-data responses |
+| `src/store/AuthContext.tsx`, `src/query/privateSession.ts`, `src/hooks/useOrders.ts`, `src/pages/Orders.tsx` | Session-scoped private queries, cancellation, cleanup, and stale-login rejection |
+| `src/api/auth.ts`, `src/utils/requestSignal.ts` | Bounded auth requests and logout revocation |
+| `src/utils/catalogParams.ts`, `src/query/catalog.ts`, `src/query/client.ts`, `src/query/policy.ts`, `src/api/products.ts` | Normalized keys/requests, price ordering, freshness, retries, and SSR GC safety |
+| `src/store/CartContext.tsx`, `src/store/cartCoordinator.ts`, `src/api/cart.ts`, `src/api/client.ts` | Cart lifecycle, read cancellation, guarded writes, and private fetches |
+| `src/components/cart/CartFeedback.tsx`, `CartDrawer.tsx`, `CartItem.tsx`, `CartSummary.tsx`; `src/pages/Cart.tsx`, `Checkout.tsx`; `src/components/product/ProductCard.tsx`, `src/pages/ProductDetails.tsx` | Error/retry states and cart/checkout interaction guards |
+| `app/lib/catalog.server.ts`, `app/lib/config.server.ts`, `app/lib/serverConfig.ts`, `vite.config.ts`, `.env.example` | Validated configuration, public-only dehydration, and whole-loader deadlines |
+| `tests/catalog.test.mjs`, `session-cache.test.mjs`, `cart-config.test.mjs`, `api.test.mjs`, `ssr-regression.mjs`, `ssr-smoke.mjs`, `bridge-cache.php`, `live-auth.mjs`, `live-cart.ps1`; `package.json`, `README.md` | Repeatable automated/live checks, scripts, and deployment notes |
+
+| Layer/data | Freshness and lifetime | Refresh / invalidation |
+| --- | --- | --- |
+| HTML and React Router route data | `private, no-store`, including errors | Every request; no shared HTTP cache |
+| SSR public QueryClients | Request-local; no GC timers retaining request state | Loader clears its cache; only successful queries explicitly marked public are dehydrated |
+| Browser products/details/variations | 60-second stale time; five-minute inactive GC | Stale mount/focus/reconnect; 60-second visible-tab refresh; fresh hydration avoids an immediate refetch |
+| Browser categories | Five-minute stale time; ten-minute inactive GC | Stale mount/focus/reconnect; no polling |
+| Profile/orders | Session-scoped keys without tokens; zero stale time and inactive GC | Cancel/remove on session changes or protected-request 401; orders refetch on mount/focus, profile also checks every visible minute |
+| Cart | WooCommerce cookie session; no-store HTTP requests | Read on mount; account changes clear displayed cart until native handoff reload or explicit refresh; uncertain writes require explicit read reconciliation |
+| Bridge authentication/orders | `private, no-store` for namespace successes and errors | Server authorization on every protected request |
+| Node shared cache, Redis, CDN, persistent query cache | Not introduced | Production cache infrastructure remains an operator responsibility |
+
+Public query parameters are normalized before both key construction and API requests. Price low-to-high uses ascending order. Browser catalog reads retry at most once for network/429/5xx errors; SSR reads do not retry and share one whole-loader deadline.
+
+Auth requests are bounded to ten seconds; remote logout revocation is bounded to three seconds. Logout immediately removes local private state before waiting for revocation and preserves the existing native WordPress logout handoff. A failed revocation cannot prove server logout occurred; WordPress must be reachable to clear its own cookie session.
+
+Cart writes are guarded against overlap, never automatically replayed. Failed reads are not treated as empty carts. Checkout links/routes remain unavailable until the cart is known, non-empty, and settled. Native WooCommerce remains authoritative for totals, stock, and final checkout.
+
+## WordPress change outside this repository
+
+The installed bridge was inspected and changed only as follows: version 1.1.1 to 1.1.2, one `rest_post_dispatch` filter in `init()`, and this callback. Existing authentication, CORS, order authorization, and handoff logic were not changed.
+
+```php
+add_filter( 'rest_post_dispatch', array( __CLASS__, 'private_response' ), 20, 3 );
+
+public static function private_response( $response, $server, $request ) {
+    $route = $request->get_route();
+    if ( '/' . self::NAMESPACE === $route || 0 === strpos( $route, '/' . self::NAMESPACE . '/' ) ) {
+        $response->header( 'Cache-Control', 'private, no-store' );
+    }
+    return $response;
+}
+```
+
+Deploy this small change to the separately managed plugin as well as the React build. Do not replace the full installed plugin with this snippet. Run `php -l <bridge-file>` and `php tests/bridge-cache.php <bridge-file>`; the standalone test checks success/error statuses and namespace isolation without loading WordPress.
+
 ## Verification and remaining browser checks
 
-Executed for this migration:
+Executed during the cache/session hardening:
 
-- Framework type generation, TypeScript, production build, lint, and catalog unit tests.
+- Framework type generation, TypeScript, production build, lint, and 14 unit/API regression tests.
 - Production HTML smoke checks for all routes, product content, metadata, search, pagination, category sorting, empty results, and 404s.
-- An isolated unreachable-upstream check: product page returned HTTP 503 with an error UI.
-- HTTP tests through the development API forwarding: password signup/login, 303 auth handoff, authenticated native checkout, cart quantity preservation, removal, unauthenticated order denial, and separate Mohamed/Omar order sets. The completed test's temporary customer and cart item were removed.
-- Native password-recovery form availability; no reset email was requested.
+- Four production-bundle regression tests: HTML/data headers, concurrent public-query isolation, safe 503 errors without retries, and a shared deadline across sequential fetches (504).
+- PHP syntax and bridge cache-header regression checks.
+- Live HTTP tests through development forwarding: Mohamed/Omar login, profile, separate order sets, ignored customer-ID tampering, logout/revocation, and private/no-store headers.
+- An isolated guest cart: add, quantity change, native checkout request, and cookie-session continuity. The added test item was removed; no order was placed.
 
-Browser tooling could not initialize (kernel assets path error). HTTP clients do not verify browser hydration, CORS/SameSite policy, visual parity, client navigation, or duplicate requests during hydration. Email delivery was not tested.
+WordPress initially refused/timed out, then became available for the live HTTP tests. Browser automation was stopped because it could not reliably determine Chrome's current URL for its safety checks. No live browser test is claimed. Hydration, CORS/SameSite behavior, UI account switching, click-driven cart/checkout, visual parity, and duplicate hydration requests remain unverified. Signup/password recovery were not re-executed in this hardening pass; email delivery and browser LCP/CLS remain unmeasured.
+
+Repeat live HTTP checks with the development server and WordPress running:
+
+```powershell
+# Supply test-only credentials in this terminal; do not commit them or put them in VITE variables.
+$env:ALAHLY_TEST_CUSTOMER_A_EMAIL = '<customer-a>'
+$env:ALAHLY_TEST_CUSTOMER_B_EMAIL = '<customer-b>'
+$env:ALAHLY_TEST_PASSWORD = '<shared-test-password>'
+node tests/live-auth.mjs
+powershell -NoProfile -File tests/live-cart.ps1
+```
+
+The cart test uses a new automatic cookie container, refuses a non-empty initial cart, adds/removes only its own test item, and does not place an order. These are HTTP tests, not substitutes for the browser checklist.
 
 Complete these browser checks at **http://alahly.test:5173**:
 

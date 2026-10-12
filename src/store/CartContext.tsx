@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
 import {
@@ -15,6 +16,8 @@ import {
 } from "../api/cart";
 import type { CartItem } from "../types/cart";
 import type { Product } from "../types/product";
+import { createCartCoordinator } from './cartCoordinator';
+import { useAuth } from './AuthContext';
 
 interface CartContextValue {
   items: CartItem[];
@@ -22,6 +25,9 @@ interface CartContextValue {
   itemCount: number;
   subtotal: number;
   isSyncing: boolean;
+  error: string | null;
+  refreshCart: () => Promise<boolean>;
+  canCheckout: () => boolean;
   addItem: (
     product: Product,
     quantity?: number,
@@ -42,15 +48,17 @@ const itemPrice = (item: CartItem) =>
   );
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [coordinator] = useState(() => createCartCoordinator<CartItem[]>(getStoreCart, []));
+  const { sessionScope } = useAuth();
+  const { items, isSyncing, error } = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot, coordinator.getServerSnapshot);
   const [isOpen, setOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(true);
   useEffect(() => {
-    getStoreCart()
-      .then(setItems)
-      .catch(() => setItems([]))
-      .finally(() => setIsSyncing(false));
-  }, []);
+    // A new React token does not mean the WordPress cookie handoff has finished.
+    // Never reload the previous account's cookie cart during that transition.
+    if (sessionScope === 0) void coordinator.refresh();
+    else coordinator.reset('Your account session changed. Refresh your bag before continuing.');
+    return () => coordinator.reset();
+  }, [coordinator, sessionScope]);
   const addItem = useCallback(
     async (
       product: Product,
@@ -58,47 +66,35 @@ export function CartProvider({ children }: { children: ReactNode }) {
       _variationId?: number,
       selectedAttributes?: Record<string, string>,
     ) => {
-      setIsSyncing(true);
-      try {
         const variation = selectedAttributes
           ? Object.entries(selectedAttributes).map(([attribute, value]) => ({
               attribute,
               value,
             }))
           : undefined;
-        setItems(await addStoreCartItem(product.id, quantity, variation));
+        await coordinator.mutate(() => addStoreCartItem(product.id, quantity, variation));
         setOpen(true);
-      } finally {
-        setIsSyncing(false);
-      }
     },
-    [],
+    [coordinator],
   );
   const updateQuantity = useCallback(async (key: string, quantity: number) => {
-    setIsSyncing(true);
-    try {
-      setItems(
+    await coordinator.mutate(() =>
         quantity < 1
-          ? await removeStoreCartItem(key)
-          : await updateStoreCartItem(key, quantity),
+          ? removeStoreCartItem(key)
+          : updateStoreCartItem(key, quantity),
       );
-    } finally {
-      setIsSyncing(false);
-    }
-  }, []);
+  }, [coordinator]);
   const removeItem = useCallback(async (key: string) => {
-    setIsSyncing(true);
-    try {
-      setItems(await removeStoreCartItem(key));
-    } finally {
-      setIsSyncing(false);
-    }
-  }, []);
+    await coordinator.mutate(() => removeStoreCartItem(key));
+  }, [coordinator]);
   const value = useMemo(
     () => ({
       items,
       isOpen,
       isSyncing,
+      error,
+      refreshCart: coordinator.refresh,
+      canCheckout: () => coordinator.canCheckout() && coordinator.getSnapshot().items.length > 0,
       itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
       subtotal: items.reduce(
         (sum, item) => sum + itemPrice(item) * item.quantity,
@@ -109,7 +105,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       removeItem,
       setOpen,
     }),
-    [items, isOpen, isSyncing, addItem, updateQuantity, removeItem],
+    [items, isOpen, isSyncing, error, coordinator, addItem, updateQuantity, removeItem],
   );
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

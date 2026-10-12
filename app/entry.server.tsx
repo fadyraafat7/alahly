@@ -2,6 +2,12 @@ import { PassThrough } from "node:stream";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { ServerRouter, type EntryContext } from "react-router";
 import { renderToPipeableStream } from "react-dom/server";
+import { applyCachePolicy } from './lib/cachePolicy';
+
+export function handleDataRequest(response: Response) {
+  applyCachePolicy(response.headers);
+  return response;
+}
 
 export const streamTimeout = 5_000;
 // Standard React Router Node streaming entry; catalog loaders resolve before render.
@@ -11,7 +17,7 @@ export default function handleRequest(
   headers: Headers,
   context: EntryContext,
 ) {
-  headers.set("Cache-Control", "no-store");
+  applyCachePolicy(headers);
   headers.set("Content-Type", "text/html; charset=utf-8");
   if (request.method === "HEAD") return new Response(null, { status, headers });
   return new Promise<Response>((resolve, reject) => {

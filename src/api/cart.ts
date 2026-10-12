@@ -83,8 +83,8 @@ const sync = (data: unknown, headers: Headers) => {
   return cartSchema.parse(data).items.map(toCartItem);
 };
 
-export async function getStoreCart(): Promise<CartItem[]> {
-  const { data, headers } = await apiRequest<unknown>("/cart");
+export async function getStoreCart(signal?: AbortSignal): Promise<CartItem[]> {
+  const { data, headers } = await apiRequest<unknown>("/cart", { signal });
   return sync(data, headers);
 }
 export async function addStoreCartItem(

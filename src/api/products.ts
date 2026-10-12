@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { apiGet } from "./client";
+import { normalizeProductQuery } from '../utils/catalogParams';
 import type { ApiContext } from "./client";
 import type {
   Product,
@@ -115,6 +116,7 @@ export async function getProducts(
   params: ProductQuery = {},
   context?: ApiContext,
 ): Promise<ProductPage> {
+  params = normalizeProductQuery(params);
   const storeParams = {
     ...params,
     min_price:

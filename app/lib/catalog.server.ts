@@ -1,6 +1,5 @@
 import {
   data,
-  isRouteErrorResponse,
   type LoaderFunctionArgs,
 } from "react-router";
 import { dehydrate } from "@tanstack/react-query";
@@ -15,33 +14,22 @@ import {
 import { catalogParams, categoryParams } from "../../src/utils/catalogParams";
 import { plainText } from "../../src/utils/html";
 import { ApiError } from "../../src/api/client";
+import { serverConfig } from './config.server';
+import { requestSignal } from '../../src/utils/requestSignal';
 
 export async function loadCatalog(
   kind: "home" | "products" | "product" | "category",
   { request, params }: LoaderFunctionArgs,
 ) {
   const client = createQueryClient();
-  const wpSite =
-    process.env.VITE_WP_SITE_URL || import.meta.env.VITE_WP_SITE_URL;
-  if (!wpSite)
-    throw data(
-      { message: "WordPress origin is not configured." },
-      { status: 503 },
-    );
-  const baseUrl =
-    process.env.WC_STORE_API_URL ||
-    new URL(
-      process.env.VITE_WC_STORE_API_URL ||
-        import.meta.env.VITE_WC_STORE_API_URL ||
-        "/wp-json/wc/store/v1",
-      wpSite,
-    ).href;
-  const context = { baseUrl, signal: request.signal };
+  // One deadline spans all dependent/parallel fetches. No loader-level retries.
+  const signal = requestSignal(request.signal, serverConfig.loaderTimeoutMs);
+  const context = { baseUrl: serverConfig.storeApiUrl, signal };
   const url = new URL(request.url);
   let title = "Alahly | Thoughtful goods for everyday living";
   let description =
     "Explore collections, new arrivals, and special offers at Alahly.";
-  const origin = process.env.STOREFRONT_URL || wpSite;
+  const origin = serverConfig.canonicalOrigin;
   const canonical = new URL(url.pathname, origin);
   // Keep pagination; search and filtered results are not canonical catalog pages.
   const page = catalogParams(url.searchParams).page ?? 1;
@@ -87,8 +75,8 @@ export async function loadCatalog(
     } else if (kind === "category") {
       const categories = await client.fetchQuery(categoriesQuery(context));
       const category = categories.find((item) => item.slug === params.slug);
-      if (!category) throw data(null, { status: 404 });
-      client.setQueryData(categoryQuery(params.slug!).queryKey, category);
+      if (!category) throw new Response(null, { status: 404 });
+      await client.fetchQuery({ ...categoryQuery(params.slug!, context), queryFn: () => category });
       await client.fetchQuery(
         productsQuery(categoryParams(url.searchParams, category.id), context),
       );
@@ -100,7 +88,7 @@ export async function loadCatalog(
       const product = await client.fetchQuery(
         productQuery(params.slug!, context),
       );
-      if (!product) throw data(null, { status: 404 });
+      if (!product) throw new Response(null, { status: 404 });
       await Promise.all([
         client.fetchQuery(
           productsQuery({ related: product.id, per_page: 4 }, context),
@@ -116,7 +104,7 @@ export async function loadCatalog(
     }
     return data(
       {
-        dehydratedState: dehydrate(client),
+        dehydratedState: dehydrate(client, { shouldDehydrateQuery: query => query.meta?.public === true && query.state.status === 'success' }),
         seo: {
           title,
           description: description.slice(0, 160),
@@ -124,21 +112,13 @@ export async function loadCatalog(
           noindex,
         },
       },
-      { headers: { "Cache-Control": "no-store" } },
+      { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {
-    if (
-      isRouteErrorResponse(error) ||
-      (error &&
-        typeof error === "object" &&
-        "type" in error &&
-        error.type === "DataWithResponseInit")
-    )
-      throw error;
     if (error instanceof Response) throw error;
     throw data(null, {
-      status: error instanceof ApiError && error.status === 404 ? 404 : 503,
-      headers: { "Cache-Control": "no-store" },
+      status: signal.aborted && signal.reason?.name === 'TimeoutError' ? 504 : error instanceof ApiError && error.status === 404 ? 404 : 503,
+      headers: { "Cache-Control": "private, no-store" },
     });
   } finally {
     client.clear();

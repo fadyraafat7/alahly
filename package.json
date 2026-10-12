@@ -9,8 +9,9 @@
         "build": "react-router build",
         "start": "react-router-serve build/server/index.js",
         "lint": "eslint .",
-        "test": "node --experimental-strip-types --test tests/catalog.test.mjs",
+        "test": "node --experimental-strip-types --test tests/*.test.mjs",
         "test:ssr": "node tests/ssr-smoke.mjs",
+        "test:ssr:regression": "node --test tests/ssr-regression.mjs",
         "preview": "react-router-serve build/server/index.js"
     },
     "dependencies": {

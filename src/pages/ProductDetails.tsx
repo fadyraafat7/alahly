@@ -22,7 +22,7 @@ export function ProductDetails() {
     { related: product?.id, per_page: 4 },
     Boolean(product),
   );
-  const { addItem } = useCart();
+  const { addItem, isSyncing } = useCart();
   const [quantity, setQuantity] = useState(1);
   const [selected, setSelected] = useState<Record<string, string>>({});
   const eligible = useMemo(
@@ -176,7 +176,7 @@ export function ProductDetails() {
                 </button>
               </div>
               <button
-                disabled={!inStock || needsSelection}
+                disabled={!inStock || needsSelection || isSyncing}
                 onClick={() =>
                   addItem(product, quantity, eligible?.id, selected)
                 }
